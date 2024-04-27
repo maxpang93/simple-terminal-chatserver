@@ -1,5 +1,6 @@
 from collections import namedtuple
 from enum import Enum
+import threading
 import socket
 from typing import List
 
@@ -23,6 +24,7 @@ class ChatServer:
         self.clients: List[ClientInstance] = []
         self.HOST: str = host
         self.PORT: str = port
+        self._lock = threading.RLock()
 
     def ask_for_nickname(self, client_socket: socket.socket) -> str:
         """
@@ -44,8 +46,9 @@ class ChatServer:
         msg = fmt_text(msg, TextColor.ORANGE.value)
         print(f"Sending server msg: {msg}")
 
-        for client in self.clients:
-            client.socket.send(msg.encode())
+        with self._lock:
+            for client in self.clients:
+                client.socket.send(msg.encode())
         print("Finished sending server msg.")
 
     def broadcast(self, msg: bytes, sender: ClientInstance):
@@ -55,9 +58,10 @@ class ChatServer:
         msg = fmt_text(f"<{sender.nickname}> {msg.decode()}", TextColor.GREEN.value).encode()
         print(f"Broadcasting a msg: {msg}")
 
-        for client in self.clients:
-            if client != sender:
-                client.socket.send(msg)
+        with self._lock:
+            for client in self.clients:
+                if client != sender:
+                    client.socket.send(msg)
         print("Finished broadcasting")
 
     def add_client(self, client: ClientInstance):
@@ -65,7 +69,8 @@ class ChatServer:
         Add client to list of connections
         """
         print(f"Currently {len(self.clients)} clients in chat. Adding new client..")
-        self.clients.append(client)
+        with self._lock:
+            self.clients.append(client)
         print(f"New client added. Currently {len(self.clients)} clients in chat.")
 
     def remove_client(self, client: ClientInstance):
@@ -74,16 +79,16 @@ class ChatServer:
         """
         print(f"Currently {len(self.clients)} clients in chat. Removing {client.nickname}..")
 
-        if client in self.clients:
-            print("client in list")
-            self.clients.remove(client)
-            print("client removed from list")
-            client.socket.close()
-            print("client conn closed")
+        with self._lock:
+            if client in self.clients:
+                self.clients.remove(client)
+                client.socket.close()
 
-            self.server_msg(f"{client.nickname} quit the chat.")
+                self.server_msg(f"{client.nickname} quit the chat.")
+                print(f"{client.nickname} removed. Currently {len(self.clients)} clients in chat.")
 
-        print(f"{client.nickname} removed. Currently {len(self.clients)} clients in chat.")
+            else:
+                print(f"{client.nickname} does not exist. Skipping..")
 
     def handle_client(self, client_socket: socket.socket):
         """
@@ -124,7 +129,9 @@ class ChatServer:
                 client_socket, client_address = server_socket.accept()
                 print(f"New connection from {client_address}")
 
-                self.handle_client(client_socket)
+                client_thread = threading.Thread(target=self.handle_client, args=(client_socket,))
+                client_thread.daemon = True
+                client_thread.start()
 
             except KeyboardInterrupt:
                 print("KeyboardInterrupt received. Stopping server.")
@@ -135,8 +142,9 @@ class ChatServer:
                 break
 
         print(f"Closing client connections. Total {len(self.clients)}")
-        for client in self.clients:
-            client.socket.close()
+        with self._lock:
+            for client in self.clients:
+                client.socket.close()
         print("Client connections closed.")
 
         server_socket.close()
