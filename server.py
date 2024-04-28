@@ -3,6 +3,7 @@ from enum import Enum
 import threading
 import socket
 import subprocess
+import ssl
 from typing import List
 
 BUFFER_SIZE = 1024
@@ -131,13 +132,19 @@ class ChatServer:
         """
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind((self.HOST, self.PORT))
-        server_socket.listen()
+        # server_socket.listen()
 
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
+        ssl_server_socket = ssl_context.wrap_socket(server_socket, server_side=True)
+        print("ssl server socket initialized")
+
+        ssl_server_socket.listen()
         print(f"Server listening on {self.HOST}:{self.PORT}")
 
         while True:
             try:
-                client_socket, client_address = server_socket.accept()
+                client_socket, client_address = ssl_server_socket.accept()
                 print(f"New connection from {client_address}")
 
                 client_thread = threading.Thread(target=self.handle_client, args=(client_socket,))
