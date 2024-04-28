@@ -2,6 +2,7 @@ from collections import namedtuple
 from enum import Enum
 import threading
 import socket
+import subprocess
 from typing import List
 
 BUFFER_SIZE = 1024
@@ -19,11 +20,21 @@ def fmt_text(text: str, color: TextColor):
     return color + text + TextColor.WHITE.value
 
 
+def get_network_ip() -> str:
+    """
+    Retrive the device's IP on the LAN
+    """
+    ip_list = subprocess.run("hostname -I", stdout=subprocess.PIPE, shell=True).stdout.decode()
+
+    first_ip = ip_list.split(" ")[0].strip()
+    return first_ip
+
+
 class ChatServer:
     def __init__(self, host="localhost", port=8384) -> None:
         self.clients: List[ClientInstance] = []
         self.HOST: str = host
-        self.PORT: str = port
+        self.PORT: int = port
         self._lock = threading.RLock()
 
     def ask_for_nickname(self, client_socket: socket.socket) -> str:
@@ -84,7 +95,7 @@ class ChatServer:
                 self.clients.remove(client)
                 client.socket.close()
 
-                self.server_msg(f"{client.nickname} quit the chat.")
+                self.server_msg(f"\n{client.nickname} quit the chat.\n")
                 print(f"{client.nickname} removed. Currently {len(self.clients)} clients in chat.")
 
             else:
@@ -152,5 +163,6 @@ class ChatServer:
 
 
 if __name__ == "__main__":
-    server = ChatServer()
+    network_ip = get_network_ip()
+    server = ChatServer(host=network_ip)
     server.run()
